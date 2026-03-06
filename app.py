@@ -1,11 +1,12 @@
 """
 Tour Agency AIS — Автоматизированная информационная система Турфирмы.
 
-Приложение для управления туристическим агентством:
-- Управление клиентами и турами
-- Бронирование и регистрация продаж
-- Отчётность и аналитика
-- Ролевая модель доступа (Admin, Manager, Seller, Guest)
+Простыми словами: это программа для управления туристическим агентством.
+В ней можно:
+- Вести базу клиентов и туров
+- Оформлять бронирования и продажи
+- Смотреть отчёты по продажам
+- Работать под разными ролями (Админ, Менеджер, Продавец, Гость)
 """
 
 import sys
@@ -22,10 +23,10 @@ from src.utils.paths import resource_path
 
 def load_stylesheet() -> str:
     """
-    Загрузить файл стилей приложения.
-
+    Загрузить красивый внешний вид программы (цвета, шрифты, кнопки).
+    
     Returns:
-        Содержимое файла styles.qss или пустая строка
+        Содержимое файла styles.qss или пустая строка, если файл не найден
     """
     styles_path = resource_path("assets", "styles.qss")
     if styles_path.exists():
@@ -34,27 +35,41 @@ def load_stylesheet() -> str:
 
 
 def main() -> None:
-    """Точка входа приложения."""
+    """
+    Главная точка входа — отсюда начинается запуск программы.
+    
+    Что происходит по шагам:
+    1. Создаём приложение Qt
+    2. Настраиваем шрифт и стили
+    3. Инициализируем базу данных
+    4. Показываем окно входа
+    5. После успешного входа — показываем главное окно
+    """
     app = QApplication(sys.argv)
     app.setApplicationName("Tour Agency AIS")
     app.setFont(QFont("Inter", 10))
 
+    # Применяем красивый стиль, если файл стилей найден
     stylesheet = load_stylesheet()
     if stylesheet:
         app.setStyleSheet(stylesheet)
 
+    # Создаём и инициализируем базу данных
     db = DatabaseManager()
     db.initialize()
     seed_database(db)
 
+    # Показываем окно входа — пока пользователь не войдёт, программа не пустится дальше
     login_window = LoginWindow(db)
     if login_window.exec() != LoginWindow.Accepted:
         sys.exit(0)
 
+    # После успешного входа открываем главное окно программы
     user = login_window.authenticated_user
     window = MainWindow(db, user)
     window.show()
 
+    # Запускаем главный цикл приложения
     sys.exit(app.exec())
 
 

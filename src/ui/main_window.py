@@ -1,7 +1,13 @@
 """
 Главное окно приложения Tour Agency AIS.
 
-Управляет навигацией, сайдбаром и переключением между страницами.
+Это основное окно программы, которое видит пользователь после входа.
+Здесь есть:
+- Боковое меню (сайдбар) с кнопками навигации
+- Переключение между страницами (Клиенты, Туры, Бронирования и т.д.)
+- Поиск и кнопки действий на каждой странице
+
+Каждая роль (Админ, Менеджер, Продавец, Гость) видит свой набор страниц.
 """
 
 from __future__ import annotations
@@ -52,7 +58,12 @@ from src.utils.roles import (
 
 
 class MainWindow(QMainWindow):
-    """Главное окно приложения с навигацией и страницами."""
+    """
+    Главное окно приложения.
+    
+    Простыми словами: это "основной экран" программы, где пользователь работает.
+    Слева — меню с кнопками, справа — содержимое выбранной страницы.
+    """
 
     def __init__(self, db: DatabaseManager, user: dict[str, Any]) -> None:
         super().__init__()
@@ -61,28 +72,30 @@ class MainWindow(QMainWindow):
 
         self.db = db
         self.user = user
+        # Определяем роль пользователя — от этого зависит, какие страницы будут доступны
         self.role = self._determine_role(user)
 
-        # Сервисы
+        # Сервисы для работы с данными (база данных)
         self.clients_service = ClientsService(db)
         self.tours_service = ToursService(db)
         self.bookings_service = BookingsService(db)
         self.users_service = UsersService(db)
 
-        # Навигация
+        # Навигация: какие страницы доступны этой роли
         self.allowed_indexes = get_allowed_indexes(self.role)
         self.current_page_index = get_default_page_index(self.role)
 
-        # UI компоненты
+        # UI компоненты (будут созданы ниже)
         self.stack: QStackedWidget | None = None
         self.page_title: QLabel | None = None
         self.search_input: QLineEdit | None = None
         self.add_btn: QPushButton | None = None
         self.nav_buttons: list[QPushButton] = []
 
-        # Страницы
+        # Словарь для хранения созданных страниц
         self._pages: dict[str, QWidget] = {}
 
+        # Создаём интерфейс, настраиваем навигацию и показываем первую страницу
         self._init_ui()
         self._setup_navigation()
         self._apply_role_navigation()
@@ -101,7 +114,13 @@ class MainWindow(QMainWindow):
         return role_map.get(username, role)
 
     def _init_ui(self) -> None:
-        """Инициализировать пользовательский интерфейс."""
+        """
+        Создать основной интерфейс окна.
+        
+        Структура:
+        - Слева: боковая панель (сайдбар) с кнопками
+        - Справа: рабочая область с контентом
+        """
         central = QWidget()
         self.setCentralWidget(central)
 
@@ -109,6 +128,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(12)
 
+        # Создаём левую панель (меню) и правую часть (контент)
         sidebar = self._build_sidebar()
         content = self._build_content()
 
@@ -116,7 +136,13 @@ class MainWindow(QMainWindow):
         root.addWidget(content)
 
     def _build_sidebar(self) -> QWidget:
-        """Построить боковую панель навигации."""
+        """
+        Создать боковую панель меню.
+        
+        Здесь размещаются:
+        - Логотип "TOUR CRM"
+        - Кнопки навигации по страницам
+        """
         sidebar = QFrame()
         sidebar.setObjectName("Sidebar")
         sidebar.setFixedWidth(220)
@@ -125,11 +151,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(14, 18, 14, 14)
         layout.setSpacing(8)
 
+        # Логотип вверху
         logo = QLabel("TOUR CRM")
         logo.setObjectName("SidebarLogo")
         logo.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        # Кнопки навигации
+        # Кнопки навигации — их набор зависит от роли пользователя
         button_labels = ["Панель", "Клиенты", "Туры", "Консультации", "Регистрация продаж", "Пользователи", "Отчеты"]
         self.nav_buttons = [SidebarButton(label) for label in button_labels]
 
@@ -142,13 +169,19 @@ class MainWindow(QMainWindow):
         return sidebar
 
     def _build_content(self) -> QWidget:
-        """Построить контентную область с страницами."""
+        """
+        Создать правую часть окна — здесь будет контент страниц.
+        
+        Состоит из:
+        - Верхняя панель: заголовок, поиск, кнопки действий
+        - Стек страниц: переключение между разделами
+        """
         wrapper = QWidget()
         layout = QVBoxLayout(wrapper)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        # TopBar
+        # Верхняя панель (TopBar)
         topbar = QFrame()
         topbar.setObjectName("TopBar")
         top_layout = QHBoxLayout(topbar)
@@ -279,11 +312,15 @@ class MainWindow(QMainWindow):
         else:
             self.clients_page.data_changed.connect(self.dashboard_page.refresh)
             self.tours_page.data_changed.connect(self.dashboard_page.refresh)
-            self.bookings_page.data_changed.connect(self.dashboard_page.refresh)
             self.consultations_page.register_sale_requested.connect(self._open_sale_registration_from_tour)
-            self.tours_page.data_changed.connect(self.reports_page.refresh)
-            self.bookings_page.data_changed.connect(self.reports_page.refresh)
             self.tours_page.register_sale_requested.connect(self._open_sale_registration_from_tour)
+
+            # Страницы только для админа
+            if hasattr(self, "bookings_page"):
+                self.bookings_page.data_changed.connect(self.dashboard_page.refresh)
+                self.bookings_page.data_changed.connect(self.reports_page.refresh)
+            if hasattr(self, "reports_page"):
+                self.tours_page.data_changed.connect(self.reports_page.refresh)
 
     def _can(self, permission: str) -> bool:
         """Проверить наличие разрешения у роли."""
@@ -305,19 +342,30 @@ class MainWindow(QMainWindow):
     def switch_page(self, index: int) -> None:
         """
         Переключиться на страницу по индексу.
-
+        
+        Что происходит:
+        1. Проверяем, разрешена ли эта страница для текущей роли
+        2. Переключаем стек на нужную страницу
+        3. Подсвечиваем активную кнопку в меню
+        4. Обновляем заголовок и настройки верхней панели
+        5. Обновляем данные на странице
+        6. Запускаем анимацию появления
+        
         Args:
-            index: Индекс страницы
+            index: Индекс страницы (0 = Панель, 1 = Клиенты, и т.д.)
         """
+        # Проверяем, есть ли у пользователя доступ к этой странице
         if index not in self.allowed_indexes:
             return
 
         self.current_page_index = index
         self.stack.setCurrentIndex(index)
 
+        # Подсвечиваем нажатую кнопку
         for idx, button in enumerate(self.nav_buttons):
             button.setChecked(idx == index)
 
+        # Получаем настройки страницы (заголовок, поиск, кнопки)
         page = self.stack.currentWidget()
         config = get_page_config(self.role, index)
 
@@ -332,24 +380,37 @@ class MainWindow(QMainWindow):
             self.add_btn.setVisible(False)
             self.search_input.setEnabled(False)
 
+        # Очищаем строку поиска при переключении
         self.search_input.blockSignals(True)
         self.search_input.clear()
         self.search_input.blockSignals(False)
 
+        # Обновляем данные на странице
         if hasattr(page, "refresh"):
             page.refresh()
 
+        # Красивое появление страницы (анимация)
         self._animate_page(page)
 
     def _refresh_all_pages(self) -> None:
-        """Обновить все страницы после изменения данных."""
+        """
+        Обновить все страницы после изменения данных.
+        
+        Вызывается, когда пользователь добавил/изменил данные
+        на одной из страниц — чтобы остальные страницы тоже обновились.
+        """
         for i in range(self.stack.count()):
             page = self.stack.widget(i)
             if hasattr(page, "refresh"):
                 page.refresh()
 
     def _animate_page(self, page: QWidget) -> None:
-        """Анимировать появление страницы."""
+        """
+        Добавить анимацию плавного появления страницы.
+        
+        Делает интерфейс более приятным — страница не просто появляется,
+        а плавно "проявляется" за 220 мс.
+        """
         effect = QGraphicsOpacityEffect(page)
         page.setGraphicsEffect(effect)
 
@@ -362,7 +423,11 @@ class MainWindow(QMainWindow):
         self._current_animation = animation
 
     def _on_search_changed(self, text: str) -> None:
-        """Обработать изменение текста в поиске."""
+        """
+        Обработать ввод текста в строке поиска.
+        
+        Передаёт поисковый запрос на текущую страницу.
+        """
         page = self.stack.currentWidget()
         if hasattr(page, "apply_global_search"):
             page.apply_global_search(text)
