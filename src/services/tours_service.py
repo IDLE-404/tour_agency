@@ -18,15 +18,36 @@ class ToursService:
         country: str = "",
         min_price: float | None = None,
         max_price: float | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
     ) -> list[dict[str, Any]]:
         sql = """
-            SELECT id, name, country, city, date_from, date_to, price, seats, description
-            FROM tours
-            WHERE (? = '' OR name LIKE ? OR city LIKE ?)
-              AND (? = '' OR country LIKE ?)
-              AND (? IS NULL OR price >= ?)
-              AND (? IS NULL OR price <= ?)
-            ORDER BY date_from ASC
+            SELECT
+                t.id,
+                t.name,
+                t.country,
+                t.city,
+                t.date_from,
+                t.date_to,
+                t.price,
+                t.seats,
+                t.description,
+                COALESCE(b.booked_count, 0) AS booked_seats,
+                MAX(t.seats - COALESCE(b.booked_count, 0), 0) AS free_seats
+            FROM tours t
+            LEFT JOIN (
+                SELECT tour_id, COUNT(*) AS booked_count
+                FROM bookings
+                WHERE status != 'отменено'
+                GROUP BY tour_id
+            ) b ON b.tour_id = t.id
+            WHERE (? = '' OR t.name LIKE ? OR t.city LIKE ?)
+              AND (? = '' OR t.country LIKE ?)
+              AND (? IS NULL OR t.price >= ?)
+              AND (? IS NULL OR t.price <= ?)
+              AND (? IS NULL OR t.date_from >= ?)
+              AND (? IS NULL OR t.date_to <= ?)
+            ORDER BY t.date_from ASC
         """
         search_term = f"%{search.strip()}%"
         country_term = f"%{country.strip()}%"
@@ -43,6 +64,10 @@ class ToursService:
                     min_price,
                     max_price,
                     max_price,
+                    date_from,
+                    date_from,
+                    date_to,
+                    date_to,
                 ),
             ).fetchall()
         return [dict(row) for row in rows]
@@ -50,7 +75,25 @@ class ToursService:
     def list_tour_choices(self) -> list[dict[str, Any]]:
         with self.db.get_connection() as conn:
             rows = conn.execute(
-                "SELECT id, name, country, city, price FROM tours ORDER BY date_from"
+                """
+                SELECT
+                    t.id,
+                    t.name,
+                    t.country,
+                    t.city,
+                    t.price,
+                    t.seats,
+                    COALESCE(b.booked_count, 0) AS booked_seats,
+                    MAX(t.seats - COALESCE(b.booked_count, 0), 0) AS free_seats
+                FROM tours t
+                LEFT JOIN (
+                    SELECT tour_id, COUNT(*) AS booked_count
+                    FROM bookings
+                    WHERE status != 'отменено'
+                    GROUP BY tour_id
+                ) b ON b.tour_id = t.id
+                ORDER BY t.date_from
+                """
             ).fetchall()
         return [dict(row) for row in rows]
 

@@ -28,18 +28,21 @@ if not exist .venv (
   if errorlevel 1 goto :fail
 )
 
+set "VENV_PY=.venv\Scripts\python.exe"
+if not exist "%VENV_PY%" (
+  echo ERROR: venv python not found: %VENV_PY%
+  goto :fail
+)
+
 echo [3/5] Installing dependencies...
-call .venv\Scripts\activate
+"%VENV_PY%" -m pip install --upgrade pip
 if errorlevel 1 goto :fail
 
-python -m pip install --upgrade pip
-if errorlevel 1 goto :fail
-
-python -m pip install -r requirements-dev.txt
+"%VENV_PY%" -m pip install -r requirements-dev.txt
 if errorlevel 1 goto :fail
 
 echo [4/5] Building EXE with PyInstaller...
-python -m PyInstaller --noconfirm --clean --windowed --name TourAgencyAIS --add-data "assets;assets" app.py
+"%VENV_PY%" -m PyInstaller --noconfirm --clean --windowed --name TourAgencyAIS --add-data "assets;assets" app.py
 if errorlevel 1 goto :fail
 
 echo [5/5] Done.

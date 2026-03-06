@@ -3,11 +3,10 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from PySide6.QtCore import QDate, Signal
+from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QDateEdit,
     QDialog,
     QDoubleSpinBox,
     QFileDialog,
@@ -16,6 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from src.services.bookings_service import ALLOWED_STATUSES, BookingsService
 from src.services.clients_service import ClientsService
 from src.services.tours_service import ToursService
+from src.ui.widgets import DateSelect
 from src.utils.formatters import ask_confirmation, format_money, show_error, show_info
 
 
@@ -37,9 +38,11 @@ class BookingDialog(QDialog):
         bookings_service: BookingsService,
         parent: QWidget | None = None,
         data: dict[str, Any] | None = None,
+        preselected_tour_id: int | None = None,
+        preselected_client_id: int | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Бронирование")
+        self.setWindowTitle("Редактирование продажи" if data else "Регистрация продажи")
         self.setMinimumWidth(460)
 
         self.clients_service = clients_service
@@ -52,10 +55,7 @@ class BookingDialog(QDialog):
 
         self.client_combo = QComboBox()
         self.tour_combo = QComboBox()
-        self.booking_date = QDateEdit()
-        self.booking_date.setCalendarPopup(True)
-        self.booking_date.setDisplayFormat("yyyy-MM-dd")
-        self.booking_date.setDate(QDate.currentDate())
+        self.booking_date = DateSelect(QDate.currentDate(), width=None)
 
         self.status_combo = QComboBox()
         self.status_combo.addItems(ALLOWED_STATUSES)
@@ -72,7 +72,10 @@ class BookingDialog(QDialog):
 
         tours = self.tours_service.list_tour_choices()
         for tour in tours:
-            label = f"{tour['name']} - {tour['country']}, {tour['city']}"
+            label = (
+                f"{tour['name']} - {tour['country']}, {tour['city']} "
+                f"(свободно: {tour.get('free_seats', 0)})"
+            )
             self.tour_combo.addItem(label, tour["id"])
 
         self.tour_combo.currentIndexChanged.connect(self._sync_amount_with_tour)
@@ -101,6 +104,15 @@ class BookingDialog(QDialog):
 
         if data:
             self._apply_data(data)
+        else:
+            if preselected_tour_id is not None:
+                tour_index = self.tour_combo.findData(preselected_tour_id)
+                if tour_index >= 0:
+                    self.tour_combo.setCurrentIndex(tour_index)
+            if preselected_client_id is not None:
+                client_index = self.client_combo.findData(preselected_client_id)
+                if client_index >= 0:
+                    self.client_combo.setCurrentIndex(client_index)
 
     def _apply_data(self, data: dict[str, Any]) -> None:
         client_index = self.client_combo.findData(data.get("client_id"))
@@ -138,19 +150,28 @@ class BookingDialog(QDialog):
 
 class BookingsPage(QWidget):
     data_changed = Signal()
-    supports_add = True
-    search_placeholder = "Поиск бронирований по клиенту, телефону или туру..."
+    supports_add = False
+    search_placeholder = "Поиск продаж по клиенту, телефону или туру..."
 
     def __init__(
         self,
         bookings_service: BookingsService,
         clients_service: ClientsService,
         tours_service: ToursService,
+        can_create: bool = True,
+        can_edit: bool = True,
+        can_delete: bool = True,
+        can_export: bool = True,
     ) -> None:
         super().__init__()
         self.bookings_service = bookings_service
         self.clients_service = clients_service
         self.tours_service = tours_service
+        self.can_create = can_create
+        self.can_edit = can_edit
+        self.can_delete = can_delete
+        self.can_export = can_export
+        self.supports_add = False
 
         self._search_text = ""
 
@@ -162,7 +183,7 @@ class BookingsPage(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(12)
 
-        title = QLabel("Бронирования")
+        title = QLabel("Регистрация продаж")
         title.setObjectName("PageTitle")
 
         filter_bar = QFrame()
@@ -177,18 +198,12 @@ class BookingsPage(QWidget):
             self.status_filter.addItem(status, status)
 
         self.use_date_from = QCheckBox("Дата с")
-        self.date_from = QDateEdit()
-        self.date_from.setCalendarPopup(True)
-        self.date_from.setDisplayFormat("yyyy-MM-dd")
-        self.date_from.setDate(QDate.currentDate().addMonths(-1))
+        self.date_from = DateSelect(QDate.currentDate().addMonths(-1))
         self.date_from.setEnabled(False)
         self.use_date_from.toggled.connect(self.date_from.setEnabled)
 
         self.use_date_to = QCheckBox("Дата по")
-        self.date_to = QDateEdit()
-        self.date_to.setCalendarPopup(True)
-        self.date_to.setDisplayFormat("yyyy-MM-dd")
-        self.date_to.setDate(QDate.currentDate())
+        self.date_to = DateSelect(QDate.currentDate())
         self.date_to.setEnabled(False)
         self.use_date_to.toggled.connect(self.date_to.setEnabled)
 
@@ -196,11 +211,16 @@ class BookingsPage(QWidget):
         apply_btn.setObjectName("GhostButton")
         reset_btn = QPushButton("Сброс")
         reset_btn.setObjectName("GhostButton")
+        register_sale_btn = QPushButton("Регистрация продажи")
+        register_sale_btn.setObjectName("PrimaryButton")
+        register_sale_btn.setVisible(self.can_create)
         export_btn = QPushButton("Экспорт CSV")
-        export_btn.setObjectName("PrimaryButton")
+        export_btn.setObjectName("GhostButton")
+        export_btn.setVisible(self.can_export)
 
         apply_btn.clicked.connect(self.apply_filters)
         reset_btn.clicked.connect(self.reset_filters)
+        register_sale_btn.clicked.connect(self.handle_add)
         export_btn.clicked.connect(self.export_csv)
 
         filter_layout.addWidget(self.status_filter)
@@ -211,6 +231,7 @@ class BookingsPage(QWidget):
         filter_layout.addWidget(apply_btn)
         filter_layout.addWidget(reset_btn)
         filter_layout.addStretch()
+        filter_layout.addWidget(register_sale_btn)
         filter_layout.addWidget(export_btn)
 
         self.table = QTableWidget(0, 8)
@@ -219,6 +240,7 @@ class BookingsPage(QWidget):
             ["ID", "Клиент", "Тур", "Направление", "Дата", "Статус", "Сумма", "Действия"]
         )
         self.table.setColumnHidden(0, True)
+        self.table.setCornerButtonEnabled(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -229,6 +251,8 @@ class BookingsPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        if not (self.can_edit or self.can_delete):
+            self.table.setColumnHidden(7, True)
 
         root.addWidget(title)
         root.addWidget(filter_bar)
@@ -270,28 +294,40 @@ class BookingsPage(QWidget):
             self.table.setItem(row_idx, 4, QTableWidgetItem(row["booking_date"]))
             self.table.setItem(row_idx, 5, QTableWidgetItem(row["status"]))
             self.table.setItem(row_idx, 6, QTableWidgetItem(format_money(float(row["amount"]))))
-            self.table.setCellWidget(row_idx, 7, self._actions_widget(row))
-            self.table.setRowHeight(row_idx, 40)
+            if self.can_edit or self.can_delete:
+                self.table.setCellWidget(row_idx, 7, self._actions_widget(row))
+            self.table.setRowHeight(row_idx, 52)
 
     def _actions_widget(self, row: dict[str, Any]) -> QWidget:
-        container = QFrame()
+        container = QWidget()
+        container.setObjectName("ActionCell")
         layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        edit_btn = QPushButton("Изменить")
-        edit_btn.setObjectName("GhostButton")
-        delete_btn = QPushButton("Удалить")
-        delete_btn.setObjectName("DangerButton")
+        if self.can_edit:
+            edit_btn = QPushButton("Изменить")
+            edit_btn.setObjectName("GhostButton")
+            edit_btn.setMinimumWidth(86)
+            edit_btn.setFixedHeight(28)
+            edit_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            edit_btn.clicked.connect(lambda: self._edit_booking(row))
+            layout.addWidget(edit_btn)
 
-        edit_btn.clicked.connect(lambda: self._edit_booking(row))
-        delete_btn.clicked.connect(lambda: self._delete_booking(row["id"]))
-
-        layout.addWidget(edit_btn)
-        layout.addWidget(delete_btn)
+        if self.can_delete:
+            delete_btn = QPushButton("Удалить")
+            delete_btn.setObjectName("DangerButton")
+            delete_btn.setMinimumWidth(86)
+            delete_btn.setFixedHeight(28)
+            delete_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            delete_btn.clicked.connect(lambda: self._delete_booking(row["id"]))
+            layout.addWidget(delete_btn)
         return container
 
     def _edit_booking(self, row: dict[str, Any]) -> None:
+        if not self.can_edit:
+            return
         dialog = BookingDialog(
             clients_service=self.clients_service,
             tours_service=self.tours_service,
@@ -311,6 +347,8 @@ class BookingsPage(QWidget):
             show_error(self, "Ошибка", str(exc))
 
     def _delete_booking(self, booking_id: int) -> None:
+        if not self.can_delete:
+            return
         if not ask_confirmation(self, "Подтверждение", "Удалить выбранное бронирование?"):
             return
 
@@ -319,7 +357,13 @@ class BookingsPage(QWidget):
         self.data_changed.emit()
         show_info(self, "Удалено", "Бронирование удалено.")
 
-    def handle_add(self) -> None:
+    def handle_add(
+        self,
+        preselected_tour_id: int | None = None,
+        preselected_client_id: int | None = None,
+    ) -> None:
+        if not self.can_create:
+            return
         if not self.clients_service.list_client_choices() or not self.tours_service.list_tour_choices():
             show_error(self, "Недостаточно данных", "Сначала добавьте хотя бы одного клиента и тур.")
             return
@@ -329,6 +373,8 @@ class BookingsPage(QWidget):
             tours_service=self.tours_service,
             bookings_service=self.bookings_service,
             parent=self,
+            preselected_tour_id=preselected_tour_id,
+            preselected_client_id=preselected_client_id,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -337,7 +383,7 @@ class BookingsPage(QWidget):
             self.bookings_service.create_booking(dialog.payload())
             self.refresh()
             self.data_changed.emit()
-            show_info(self, "Готово", "Бронирование добавлено.")
+            show_info(self, "Готово", "Продажа зарегистрирована.")
         except (ValueError, sqlite3.IntegrityError) as exc:
             show_error(self, "Ошибка", str(exc))
 
@@ -346,6 +392,8 @@ class BookingsPage(QWidget):
         self.refresh()
 
     def export_csv(self) -> None:
+        if not self.can_export:
+            return
         rows = self.bookings_service.list_bookings(
             search=self._search_text,
             status=self.status_filter_value,

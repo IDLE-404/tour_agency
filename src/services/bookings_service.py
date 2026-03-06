@@ -94,8 +94,53 @@ class BookingsService:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def daily_summary(self, day: str) -> dict[str, Any]:
+        with self.db.get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_count,
+                    COALESCE(SUM(CASE WHEN status = 'оплачено' THEN 1 ELSE 0 END), 0) AS paid_count,
+                    COALESCE(SUM(CASE WHEN status = 'отменено' THEN 1 ELSE 0 END), 0) AS canceled_count,
+                    COALESCE(SUM(CASE WHEN status = 'оплачено' THEN amount ELSE 0 END), 0) AS paid_revenue
+                FROM bookings
+                WHERE booking_date = ?
+                """,
+                (day,),
+            ).fetchone()
+
+        return {
+            "total_count": int(row["total_count"]) if row else 0,
+            "paid_count": int(row["paid_count"]) if row else 0,
+            "canceled_count": int(row["canceled_count"]) if row else 0,
+            "paid_revenue": float(row["paid_revenue"]) if row else 0.0,
+        }
+
+    def daily_popular_tours(self, day: str, limit: int = 10) -> list[dict[str, Any]]:
+        with self.db.get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    t.name AS tour_name,
+                    t.country || ', ' || t.city AS destination,
+                    COUNT(*) AS bookings_count,
+                    COALESCE(SUM(CASE WHEN b.status = 'оплачено' THEN 1 ELSE 0 END), 0) AS paid_count,
+                    COALESCE(SUM(CASE WHEN b.status = 'оплачено' THEN b.amount ELSE 0 END), 0) AS paid_revenue
+                FROM bookings b
+                JOIN tours t ON t.id = b.tour_id
+                WHERE b.booking_date = ?
+                GROUP BY b.tour_id, t.name, t.country, t.city
+                ORDER BY bookings_count DESC, paid_revenue DESC, t.name ASC
+                LIMIT ?
+                """,
+                (day, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def create_booking(self, payload: dict[str, Any]) -> None:
         self._validate_payload(payload)
+        if payload["status"] != "отменено":
+            self._ensure_available_seat(int(payload["tour_id"]))
         sql = """
             INSERT INTO bookings (client_id, tour_id, booking_date, status, amount)
             VALUES (?, ?, ?, ?, ?)
@@ -113,6 +158,8 @@ class BookingsService:
 
     def update_booking(self, booking_id: int, payload: dict[str, Any]) -> None:
         self._validate_payload(payload)
+        if payload["status"] != "отменено":
+            self._ensure_available_seat(int(payload["tour_id"]), exclude_booking_id=booking_id)
         sql = """
             UPDATE bookings
             SET client_id = ?, tour_id = ?, booking_date = ?, status = ?, amount = ?
@@ -182,3 +229,24 @@ class BookingsService:
         if not row:
             return 0.0
         return float(row["price"])
+
+    def available_seats(self, tour_id: int, exclude_booking_id: int | None = None) -> int:
+        sql = """
+            SELECT
+                t.seats AS total_seats,
+                COALESCE(SUM(CASE WHEN b.status != 'отменено' THEN 1 ELSE 0 END), 0) AS booked_seats
+            FROM tours t
+            LEFT JOIN bookings b ON b.tour_id = t.id AND (? IS NULL OR b.id != ?)
+            WHERE t.id = ?
+            GROUP BY t.id
+        """
+        with self.db.get_connection() as conn:
+            row = conn.execute(sql, (exclude_booking_id, exclude_booking_id, tour_id)).fetchone()
+
+        if not row:
+            return 0
+        return max(int(row["total_seats"]) - int(row["booked_seats"]), 0)
+
+    def _ensure_available_seat(self, tour_id: int, exclude_booking_id: int | None = None) -> None:
+        if self.available_seats(tour_id, exclude_booking_id=exclude_booking_id) <= 0:
+            raise ValueError("Свободных мест по выбранному туру нет.")

@@ -28,7 +28,8 @@ class DatabaseManager:
                     full_name TEXT NOT NULL,
                     username TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
-                    role TEXT NOT NULL DEFAULT 'admin',
+                    role TEXT NOT NULL DEFAULT 'admin'
+                        CHECK(role IN ('admin', 'manager', 'seller', 'guest')),
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """

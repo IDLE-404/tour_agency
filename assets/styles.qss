@@ -1,10 +1,17 @@
+/* =========================
+   Global
+========================= */
+
 * {
     font-family: "Inter", "Segoe UI", sans-serif;
     color: #E5E7EB;
 }
 
+/* ВАЖНО:
+   Не красим ВСЕ QWidget фоном, иначе ломаются внутренности QDateEdit/QComboBox и т.п.
+   Фон задаём контейнерам (QMainWindow / карточкам / панелям). */
 QWidget {
-    background-color: #0B0F1A;
+    background: transparent;
 }
 
 QLabel {
@@ -19,6 +26,18 @@ QMainWindow {
         stop: 1 #0D1322
     );
 }
+
+/* Если у тебя есть центральный виджет — лучше дать ему objectName "Central"
+   и включить этот блок (в коде: centralWidget.setObjectName("Central")) */
+/*
+QWidget#Central {
+    background-color: #0B0F1A;
+}
+*/
+
+/* =========================
+   Sidebar
+========================= */
 
 QFrame#Sidebar {
     background-color: rgba(16, 23, 40, 0.94);
@@ -54,6 +73,10 @@ SidebarButton:checked {
     color: #F8FAFC;
 }
 
+/* =========================
+   TopBar
+========================= */
+
 QFrame#TopBar {
     background-color: rgba(17, 24, 39, 0.92);
     border: 1px solid rgba(34, 211, 238, 0.22);
@@ -65,6 +88,10 @@ QLabel#TopBarTitle {
     font-weight: 700;
     color: #F3F4F6;
 }
+
+/* =========================
+   Inputs
+========================= */
 
 QLineEdit#GlobalSearch,
 QLineEdit,
@@ -81,6 +108,36 @@ QTextEdit {
     selection-background-color: rgba(124, 58, 237, 0.55);
 }
 
+/* ФИКС для "Дата с / Дата по":
+   у QDateEdit внутри есть QLineEdit, который раньше перекрашивался глобальным QWidget */
+QDateEdit QLineEdit,
+QComboBox QLineEdit {
+    background: transparent; /* оставляем фон на самом контроле */
+    border: none;
+    padding: 0px;
+    margin: 0px;
+    color: #E5E7EB;
+}
+
+QComboBox::drop-down,
+QDateEdit::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 22px;
+    border-left: 1px solid rgba(148, 163, 184, 0.25);
+    border-top-right-radius: 9px;
+    border-bottom-right-radius: 9px;
+    background-color: rgba(30, 41, 59, 0.90);
+}
+
+QComboBox::down-arrow,
+QDateEdit::down-arrow {
+    image: url(assets/icons/chevron-down.svg);
+    width: 10px;
+    height: 6px;
+    border: none;
+}
+
 QLineEdit:focus,
 QDateEdit:focus,
 QComboBox:focus,
@@ -89,6 +146,109 @@ QDoubleSpinBox:focus,
 QTextEdit:focus {
     border: 1px solid rgba(34, 211, 238, 0.7);
 }
+
+/* Disabled состояния (чтобы не казалось "сломано") */
+QLineEdit:disabled,
+QDateEdit:disabled,
+QComboBox:disabled,
+QSpinBox:disabled,
+QDoubleSpinBox:disabled,
+QTextEdit:disabled {
+    color: rgba(148, 163, 184, 0.5);
+    background-color: rgba(15, 23, 42, 0.35);
+    border-color: rgba(148, 163, 184, 0.1);
+    font-style: italic;
+}
+
+QLineEdit:disabled::placeholder,
+QDateEdit:disabled::placeholder,
+QComboBox:disabled::placeholder,
+QTextEdit:disabled::placeholder {
+    color: rgba(100, 116, 139, 0.5);
+}
+
+/* --- CheckBox (fix for Date from/to) --- */
+QCheckBox {
+    background: transparent;
+    color: #CBD5E1;
+    spacing: 8px;
+    padding: 0px;
+    margin: 0px;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+
+    /* ключевой фикс */
+    background-color: transparent;
+
+    border-radius: 4px;
+    border: 1px solid rgba(148, 163, 184, 0.40);
+}
+
+QCheckBox::indicator:hover {
+    border: 1px solid rgba(34, 211, 238, 0.55);
+    background-color: rgba(34, 211, 238, 0.08);
+}
+
+QCheckBox::indicator:checked {
+    border: 1px solid rgba(124, 58, 237, 0.85);
+    background-color: rgba(124, 58, 237, 0.55);
+    image: url(assets/icons/checkmark.svg);
+}
+
+/* =========================
+   Calendar (QDateEdit popup)
+========================= */
+
+QCalendarWidget QWidget#qt_calendar_navigationbar {
+    background-color: rgba(15, 23, 42, 0.96);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 8px;
+}
+
+QCalendarWidget QToolButton {
+    color: #E5E7EB;
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    margin: 2px;
+    padding: 4px 8px;
+}
+
+QCalendarWidget QToolButton:hover {
+    background-color: rgba(51, 65, 85, 0.9);
+}
+
+QCalendarWidget QSpinBox {
+    background-color: transparent;
+    border: none;
+    color: #E5E7EB;
+}
+
+QCalendarWidget QAbstractItemView {
+    background-color: rgba(15, 23, 42, 0.98);
+    color: #E5E7EB;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    selection-background-color: rgba(34, 211, 238, 0.35);
+    selection-color: #F8FAFC;
+    outline: 0;
+}
+
+/* Чуть приятнее интеракции */
+QCalendarWidget QAbstractItemView::item:hover {
+    background-color: rgba(34, 211, 238, 0.12);
+}
+
+QCalendarWidget QAbstractItemView::item:selected {
+    background-color: rgba(124, 58, 237, 0.35);
+    color: #F8FAFC;
+}
+
+/* =========================
+   Typography
+========================= */
 
 QLabel#PageTitle {
     font-size: 20px;
@@ -101,6 +261,10 @@ QLabel#MutedText {
     color: #94A3B8;
     font-size: 12px;
 }
+
+/* =========================
+   Buttons
+========================= */
 
 QPushButton {
     border-radius: 10px;
@@ -116,6 +280,12 @@ QPushButton:hover {
 
 QPushButton:pressed {
     background-color: rgba(30, 41, 59, 0.75);
+}
+
+QPushButton:disabled {
+    background-color: rgba(30, 41, 59, 0.45);
+    border-color: rgba(148, 163, 184, 0.14);
+    color: rgba(229, 231, 235, 0.40);
 }
 
 QPushButton#PrimaryButton {
@@ -150,6 +320,10 @@ QPushButton#DangerButton:hover {
     background-color: rgba(239, 68, 68, 0.30);
 }
 
+/* =========================
+   Cards / Panels
+========================= */
+
 QFrame#FilterBar,
 QFrame#SettingsCard,
 QFrame#LoginCard {
@@ -169,6 +343,10 @@ QLabel#LoginSubtitle {
     color: #94A3B8;
 }
 
+/* =========================
+   Table
+========================= */
+
 QTableWidget#DataTable {
     background-color: rgba(17, 24, 39, 0.92);
     border: 1px solid rgba(148, 163, 184, 0.16);
@@ -187,6 +365,46 @@ QHeaderView::section {
     font-weight: 600;
 }
 
+QTableWidget#DataTable QHeaderView::section:first {
+    border-top-left-radius: 12px;
+}
+
+QTableWidget#DataTable QHeaderView::section:last {
+    border-top-right-radius: 12px;
+    border-right: none;
+}
+
+QTableWidget#DataTable QTableCornerButton::section {
+    background-color: rgba(30, 41, 59, 0.95);
+    border: none;
+}
+
+QFrame#ActionCell,
+QWidget#ActionCell {
+    background-color: transparent;
+    border: none;
+}
+
+QWidget#ActionCell QPushButton {
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+QWidget#ActionCell QPushButton#GhostButton {
+    background-color: rgba(34, 211, 238, 0.16);
+    border: 1px solid rgba(34, 211, 238, 0.40);
+    color: #CFFAFE;
+}
+
+QWidget#ActionCell QPushButton#DangerButton {
+    background-color: rgba(239, 68, 68, 0.22);
+    border: 1px solid rgba(239, 68, 68, 0.48);
+    color: #FCA5A5;
+}
+
 QTableWidget::item {
     padding: 8px;
     border: none;
@@ -195,6 +413,10 @@ QTableWidget::item {
 QTableWidget::item:hover {
     background-color: rgba(34, 211, 238, 0.10);
 }
+
+/* =========================
+   Scrollbar
+========================= */
 
 QScrollBar:vertical {
     background: rgba(15, 23, 42, 0.5);
@@ -221,6 +443,10 @@ QScrollBar::sub-page:vertical {
     height: 0px;
 }
 
+/* =========================
+   Stat Cards
+========================= */
+
 QFrame#StatCard {
     background-color: rgba(17, 24, 39, 0.95);
     border-radius: 14px;
@@ -242,9 +468,35 @@ QLabel#StatCardTitle {
 
 QLabel#StatCardValue {
     color: #F8FAFC;
-    font-size: 28px;
+    font-size: 24px;
     font-weight: 700;
+    line-height: 32px;
 }
+
+/* =========================
+   Empty State
+========================= */
+
+QFrame#EmptyState {
+    background-color: rgba(17, 24, 39, 0.6);
+    border: 1px dashed rgba(148, 163, 184, 0.25);
+    border-radius: 12px;
+}
+
+QLabel#EmptyTitle {
+    color: #94A3B8;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+QLabel#EmptySubtitle {
+    color: #64748B;
+    font-size: 13px;
+}
+
+/* =========================
+   MessageBox
+========================= */
 
 QMessageBox {
     background-color: #0F172A;

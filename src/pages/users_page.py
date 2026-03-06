@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QDate, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox,
+    QComboBox,
     QDialog,
     QFormLayout,
     QFrame,
@@ -20,15 +20,15 @@ from PySide6.QtWidgets import (
     QHeaderView,
 )
 
-from src.services.clients_service import ClientsService
-from src.ui.widgets import DateSelect
+from src.services.users_service import UsersService
 from src.utils.formatters import ask_confirmation, show_error, show_info
+from src.utils.roles import ROLE_CHOICES, role_label
 
 
-class ClientDialog(QDialog):
+class UserDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, data: dict[str, Any] | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Клиент")
+        self.setWindowTitle("Пользователь")
         self.setMinimumWidth(420)
 
         layout = QVBoxLayout(self)
@@ -36,126 +36,121 @@ class ClientDialog(QDialog):
         form.setSpacing(12)
 
         self.full_name_input = QLineEdit()
-        self.phone_input = QLineEdit()
-        self.phone_input.setPlaceholderText("+79991234567")
-        self.email_input = QLineEdit()
-        self.document_input = QLineEdit()
+        self.username_input = QLineEdit()
 
-        self.birth_toggle = QCheckBox("Указать дату рождения")
-        self.birth_date_input = DateSelect(QDate.currentDate(), width=None)
-        self.birth_date_input.setEnabled(False)
-        self.birth_toggle.toggled.connect(self.birth_date_input.setEnabled)
+        self.role_input = QComboBox()
+        for role in ROLE_CHOICES:
+            self.role_input.addItem(role_label(role), role)
+
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setPlaceholderText("Минимум 4 символа")
+
+        self.password_hint = QLabel("Пароль обязателен при создании.")
+        self.password_hint.setObjectName("MutedText")
 
         form.addRow("ФИО *", self.full_name_input)
-        form.addRow("Телефон *", self.phone_input)
-        form.addRow("Email", self.email_input)
-        form.addRow("Документ *", self.document_input)
+        form.addRow("Логин *", self.username_input)
+        form.addRow("Роль *", self.role_input)
+        form.addRow("Пароль", self.password_input)
 
-        birth_layout = QVBoxLayout()
-        birth_layout.setContentsMargins(0, 0, 0, 0)
-        birth_layout.addWidget(self.birth_toggle)
-        birth_layout.addWidget(self.birth_date_input)
-        form.addRow("Дата рождения", birth_layout)
-
-        buttons = QHBoxLayout()
-        buttons.addStretch()
+        btns = QHBoxLayout()
+        btns.addStretch()
         cancel_btn = QPushButton("Отмена")
         save_btn = QPushButton("Сохранить")
         save_btn.setObjectName("PrimaryButton")
         cancel_btn.clicked.connect(self.reject)
         save_btn.clicked.connect(self.accept)
-        buttons.addWidget(cancel_btn)
-        buttons.addWidget(save_btn)
+        btns.addWidget(cancel_btn)
+        btns.addWidget(save_btn)
 
         layout.addLayout(form)
-        layout.addLayout(buttons)
+        layout.addWidget(self.password_hint)
+        layout.addLayout(btns)
 
         if data:
             self.full_name_input.setText(data.get("full_name", ""))
-            self.phone_input.setText(data.get("phone", ""))
-            self.email_input.setText(data.get("email") or "")
-            self.document_input.setText(data.get("document", ""))
-            if data.get("birth_date"):
-                self.birth_toggle.setChecked(True)
-                self.birth_date_input.setDate(QDate.fromString(data["birth_date"], "yyyy-MM-dd"))
+            self.username_input.setText(data.get("username", ""))
+            idx = self.role_input.findData(data.get("role"))
+            if idx >= 0:
+                self.role_input.setCurrentIndex(idx)
+            self.password_hint.setText("Оставьте пароль пустым, чтобы не менять.")
+        else:
+            self.password_input.setPlaceholderText("Обязательно")
 
     def payload(self) -> dict[str, Any]:
-        birth_date = self.birth_date_input.date().toString("yyyy-MM-dd") if self.birth_toggle.isChecked() else None
         return {
             "full_name": self.full_name_input.text(),
-            "phone": self.phone_input.text(),
-            "email": self.email_input.text(),
-            "document": self.document_input.text(),
-            "birth_date": birth_date,
+            "username": self.username_input.text(),
+            "role": self.role_input.currentData(),
+            "password": self.password_input.text(),
         }
 
 
-class ClientsPage(QWidget):
+class UsersPage(QWidget):
     data_changed = Signal()
     supports_add = True
-    search_placeholder = "Поиск клиентов по ФИО или телефону..."
+    search_placeholder = "Поиск пользователей по ФИО или логину..."
 
     def __init__(
         self,
-        service: ClientsService,
+        service: UsersService,
+        current_user_id: int,
         can_create: bool = True,
         can_edit: bool = True,
         can_delete: bool = True,
     ) -> None:
         super().__init__()
         self.service = service
+        self.current_user_id = current_user_id
         self.can_create = can_create
         self.can_edit = can_edit
         self.can_delete = can_delete
         self.supports_add = self.can_create
         self._search_text = ""
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(12)
 
-        self.caption = QLabel("Справочник клиентов")
-        self.caption.setObjectName("PageTitle")
+        title = QLabel("Управление пользователями")
+        title.setObjectName("PageTitle")
 
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 6)
         self.table.setObjectName("DataTable")
-        self.table.setHorizontalHeaderLabels(
-            ["ID", "ФИО", "Телефон", "Email", "Документ", "Дата рождения", "Действия"]
-        )
+        self.table.setHorizontalHeaderLabels(["ID", "ФИО", "Логин", "Роль", "Создан", "Действия"])
+        self.table.setColumnHidden(0, True)
+        self.table.setCornerButtonEnabled(False)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.table.setColumnHidden(0, True)
-        self.table.setCornerButtonEnabled(False)
-        self.table.horizontalHeader().setStretchLastSection(False)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        if not (self.can_edit or self.can_delete):
-            self.table.setColumnHidden(6, True)
 
-        layout.addWidget(self.caption)
-        layout.addWidget(self.table)
+        if not (self.can_edit or self.can_delete):
+            self.table.setColumnHidden(5, True)
+
+        root.addWidget(title)
+        root.addWidget(self.table)
 
         self.refresh()
 
     def refresh(self) -> None:
-        rows = self.service.list_clients(self._search_text)
+        rows = self.service.list_users(self._search_text)
         self.table.setRowCount(len(rows))
 
         for row_idx, row in enumerate(rows):
             self.table.setItem(row_idx, 0, QTableWidgetItem(str(row["id"])))
             self.table.setItem(row_idx, 1, QTableWidgetItem(row["full_name"]))
-            self.table.setItem(row_idx, 2, QTableWidgetItem(row["phone"]))
-            self.table.setItem(row_idx, 3, QTableWidgetItem(row.get("email") or "—"))
-            self.table.setItem(row_idx, 4, QTableWidgetItem(row["document"]))
-            self.table.setItem(row_idx, 5, QTableWidgetItem(row.get("birth_date") or "—"))
+            self.table.setItem(row_idx, 2, QTableWidgetItem(row["username"]))
+            self.table.setItem(row_idx, 3, QTableWidgetItem(role_label(row["role"])))
+            self.table.setItem(row_idx, 4, QTableWidgetItem(row["created_at"]))
             if self.can_edit or self.can_delete:
-                self.table.setCellWidget(row_idx, 6, self._actions_widget(row))
+                self.table.setCellWidget(row_idx, 5, self._actions_widget(row))
             self.table.setRowHeight(row_idx, 52)
 
     def _actions_widget(self, row: dict[str, Any]) -> QWidget:
@@ -172,7 +167,7 @@ class ClientsPage(QWidget):
             edit_btn.setMinimumWidth(86)
             edit_btn.setFixedHeight(28)
             edit_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            edit_btn.clicked.connect(lambda: self._edit_client(row))
+            edit_btn.clicked.connect(lambda: self._edit_user(row))
             layout.addWidget(edit_btn)
 
         if self.can_delete:
@@ -181,50 +176,47 @@ class ClientsPage(QWidget):
             delete_btn.setMinimumWidth(86)
             delete_btn.setFixedHeight(28)
             delete_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            delete_btn.clicked.connect(lambda: self._delete_client(row["id"]))
+            delete_btn.clicked.connect(lambda: self._delete_user(row))
             layout.addWidget(delete_btn)
+
         return container
 
-    def _delete_client(self, client_id: int) -> None:
-        if not self.can_delete:
-            return
-        if not ask_confirmation(self, "Подтверждение", "Удалить выбранного клиента?"):
-            return
-        try:
-            self.service.delete_client(client_id)
-            self.refresh()
-            self.data_changed.emit()
-            show_info(self, "Удалено", "Клиент удален.")
-        except ValueError as exc:
-            show_error(self, "Ошибка", str(exc))
-
-    def _edit_client(self, row: dict[str, Any]) -> None:
-        if not self.can_edit:
-            return
-        dialog = ClientDialog(self, row)
+    def _edit_user(self, row: dict[str, Any]) -> None:
+        dialog = UserDialog(self, row)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
         try:
-            self.service.update_client(row["id"], dialog.payload())
+            self.service.update_user(row["id"], dialog.payload())
             self.refresh()
             self.data_changed.emit()
-            show_info(self, "Сохранено", "Данные клиента обновлены.")
+            show_info(self, "Сохранено", "Пользователь обновлен.")
+        except ValueError as exc:
+            show_error(self, "Ошибка", str(exc))
+
+    def _delete_user(self, row: dict[str, Any]) -> None:
+        if row["id"] == self.current_user_id:
+            show_error(self, "Ошибка", "Нельзя удалить текущего пользователя.")
+            return
+        if not ask_confirmation(self, "Подтверждение", "Удалить выбранного пользователя?"):
+            return
+        try:
+            self.service.delete_user(row["id"])
+            self.refresh()
+            self.data_changed.emit()
+            show_info(self, "Удалено", "Пользователь удален.")
         except ValueError as exc:
             show_error(self, "Ошибка", str(exc))
 
     def handle_add(self) -> None:
-        if not self.can_create:
-            return
-        dialog = ClientDialog(self)
+        dialog = UserDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-
         try:
-            self.service.create_client(dialog.payload())
+            self.service.create_user(dialog.payload())
             self.refresh()
             self.data_changed.emit()
-            show_info(self, "Готово", "Клиент добавлен.")
+            show_info(self, "Готово", "Пользователь добавлен.")
         except ValueError as exc:
             show_error(self, "Ошибка", str(exc))
 
